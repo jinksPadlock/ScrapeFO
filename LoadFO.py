@@ -6,7 +6,6 @@ from time import sleep
 import requests
 # from FO import *
 from SqlTlkt import *
-
 from selenium import webdriver
 
 # import os.path
@@ -43,20 +42,27 @@ class LoadFO:
                 iconurl = li.find('div', {'class': 'focuspoint'})['data-base-url']
                 iconfilepath = "../images/FOImages/" + fo_name.replace(" ", "") + '.jpg'
 
-                # Download the image if we don't already have it
-                if not path.isfile(iconfilepath):
-                    sleep(10)
-                    response = requests.get(iconurl, stream=True)
-                    with open(iconfilepath, 'wb') as out_file:
-                        copyfileobj(response.raw, out_file)
-                    del response
-                print(iconurl)
+                self.rip_fo_image(iconurl, iconfilepath)
 
                 desc_raw = soup.find('div', {'class': 'description'})
                 fo_address = str(desc_raw.find_all('p')[0]).split('<br/>')[0].replace("<p>", "") + ', ' + \
                              str(desc_raw.find_all('p')[0]).split('<br/>')[1]
                 # Address
 
+        except:
+            print("Error ripping FOs file:", exc_info()[0])
+            raise
+
+    def rip_fo_image(self, i_url, i):
+        try:
+            # Download the image if we don't already have it
+            if not path.isfile(i):
+                sleep(10)
+                response = requests.get(i_url, stream=True)
+                with open(i, 'wb') as out_file:
+                    copyfileobj(response.raw, out_file)
+                del response
+            print(i_url)
         except:
             print("Error ripping FOs file:", exc_info()[0])
             raise
