@@ -1,70 +1,67 @@
-import sys
+from sys import exc_info
 from bs4 import BeautifulSoup
-import os.path
-import shutil
+from shutil import copyfileobj
+from os import path
+from time import sleep
 import requests
-from FO import *
+# from FO import *
 from SqlTlkt import *
-import time
+
 from selenium import webdriver
+
+# import os.path
+# import shutil
 
 
 class LoadFO:
-    def __init__(self):
+    def __init__(self, db, u, p):
         self.Success = False
+        self.sql = SqlTlkt(db, u, p)
 
-    def LoadFOsFromDDFile(self):
+    def download_fos(self, url):
         try:
-            # Load soup for RepNo
-            dd_filepath = './FOData/FO_field.html'
-            rs_f = open(dd_filepath, 'r', encoding='utf-8')
-            soup = BeautifulSoup(rs_f)
-            print("Loading XML file:", dd_filepath)
+            # driver = webdriver.Firefox()
+            driver = webdriver.PhantomJS('C:/Program Files/phantomjs-2.1.1-windows/bin/phantomjs.exe')
+            driver.get(url)
+            html = driver.page_source
+            soup = BeautifulSoup(html)
         except:
-            print("Error loading XML file:", sys.exc_info()[0])
+            print("Error loading FOs file:", exc_info()[0])
+            raise
+        return soup
+
+    def rip_fos(self, soup):
+        try:
+            lis = soup.find_all('li', {'class': 'portal-type-folder castle-grid-block-item'})
+            for li in lis:
+                h3_title = li.find('h3', {'class': 'title'})
+                # Name
+                fo_name = h3_title.find('a').get_text()
+                # External URL
+                fo_url_external = h3_title.find('a')['href']
+                # Icon
+                iconurl = li.find('div', {'class': 'focuspoint'})['data-base-url']
+                iconfilepath = "../images/FOImages/" + fo_name.replace(" ", "") + '.jpg'
+
+                # Download the image if we don't already have it
+                if not path.isfile(iconfilepath):
+                    sleep(10)
+                    response = requests.get(iconurl, stream=True)
+                    with open(iconfilepath, 'wb') as out_file:
+                        copyfileobj(response.raw, out_file)
+                    del response
+                print(iconurl)
+
+                desc_raw = soup.find('div', {'class': 'description'})
+                fo_address = str(desc_raw.find_all('p')[0]).split('<br/>')[0].replace("<p>", "") + ', ' + \
+                             str(desc_raw.find_all('p')[0]).split('<br/>')[1]
+                # Address
+
+        except:
+            print("Error ripping FOs file:", exc_info()[0])
             raise
 
-        fos = soup.find_all('dt')
-        fotabs = soup.find_all('dd', {"class": "tab"})
-        fogeos = soup.find_all('dd', {"class": "geo"})
-        folayers = soup.find_all('dd', {"class": "layers"})
-
-        fo_all = []
-
-        for i in range(56):
-            a = fos[i].find('a')
-            foname = a.get_text()
-            print(i+1, foname)
-            iconurl = fotabs[i].find('img')['src']
-            iconfilepath = "../images/FOImages/" + iconurl.rsplit('/', 1)[1]
-            # Download the image if we don't already have it
-            if not os.path.isfile(iconfilepath):
-                time.sleep(10)
-                response = requests.get(iconurl, stream=True)
-                with open(iconfilepath, 'wb') as out_file:
-                    shutil.copyfileobj(response.raw, out_file)
-                del response
-            print(iconurl)
-
-            try:
-                blurb = fotabs[i].find('span', {"class": "blackgraphtx"})
-                fourl = blurb.find('a', {"class": "internal-link"})['href']
-                blurbsplit = "".join([s for s in (blurb.get_text()).strip().splitlines(True) if s.strip()])
-            except AttributeError as err:
-                blurb = fotabs[i].find('p', {"class": "blackgraphtx"})
-                fourl = blurb.find('a', {"class": "internal-link"})['href']
-                blurbsplit = "".join([s for s in (blurb.get_text()).strip().splitlines(True) if s.strip()])
-
-            folat = fogeos[i].find('span', {'class': 'latitude'}).get_text()
-            folong = fogeos[i].find('span', {'class': 'longitude'}).get_text()
-
-            fo = FieldOffice(foname, iconfilepath, fourl, folat, folong)
-            fo_all.append(fo)
-
-        return fo_all
-
     def upload_fos(self, fos):
-        sql = SqlTlkt()
         for fo in fos:
             strSQL = "INSERT INTO [Published_FO] " \
                      "( [FOName], [IconFilepath], [FOURL], [FOLat], [FOLong] ) " \
@@ -72,13 +69,13 @@ class LoadFO:
                      "( ?, ?, ?, ?, ? );"
             params = []
             params = [fo.FOName, fo.IconFilepath, fo.FOURL, fo.FOLat, fo.FOLong]
-            FOID = sql.insert_get_id(strSQL, params)
+            FOID = self.sql.insert_get_id(strSQL, params)
             fo.ProfileID = FOID
 
         strSQL2 = "UPDATE [Published_FO] " \
                   "SET [FOName] = LEFT([FOName], CHARINDEX(',', [FOName]) - 1) " \
                   "WHERE CHARINDEX(',', [FOName]) > 0;"
-        sql.run_query(strSQL2)
+        self.sql.run_query(strSQL2)
 
     def rip_foleaders(self, fos):
         browser = webdriver.Firefox()
@@ -112,7 +109,7 @@ class LoadFO:
             leadertext = leadertext + subs + '\n'
             print(leader)
             print(subs)
-            time.sleep(5)
+            sleep(5)
 
         with open('LeadershipRaw.txt', 'w') as f:
             f.truncate()

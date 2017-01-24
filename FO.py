@@ -4,15 +4,17 @@ class FieldOffice:
         self.FOID = -1
         self.FOName = ""
         self.IconFilepath = ""
-        self.FOURL = ""
+        self.FOURL_External = ""
+        self.FOURL_Internal = ""
         self.FOLat = ""
         self.FOLong = ""
 
-    def __init__(self, fn, ifp, u, la, lo):
+    def __init__(self, fn, ifp, u_e, u_i, la, lo):
         self.FOID = -1
         self.FOName = fn
         self.IconFilepath = ifp
-        self.FOURL = u
+        self.FOURL_External = u_e
+        self.FOURL_Internal = u_i
         self.FOLat = la
         self.FOLong = lo
 
