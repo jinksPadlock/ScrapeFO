@@ -9,8 +9,8 @@ class FieldOffice:
         self.FOLat = ""
         self.FOLong = ""
 
-    def __init__(self, fn, ifp, u_e, u_i, la, lo):
-        self.FOID = -1
+    def __init__(self, foid, fn, ifp, u_e, u_i, la, lo):
+        self.FOID = foid
         self.FOName = fn
         self.IconFilepath = ifp
         self.FOURL_External = u_e

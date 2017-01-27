@@ -20,11 +20,12 @@ if __name__ == '__main__':
     db = argv[2]
     dbuser = argv[3]
     dbpwd = argv[4]
-    google_api_key = argv[5]
+    key = argv[5]
 
     if fo_url:
-        lfo = LoadFO(db, dbuser, dbpwd)
-        fo_soup = lfo.download_fos(fo_url, google_api_key)
-        lfo.rip_fos(fo_soup)
-
+        lfo = LoadFO(db, dbuser, dbpwd, key)
+        fo_soup = lfo.get_soup(fo_url)
+        [ripped_fo_data, ripped_fo_leads] = lfo.rip_fos(fo_soup)
+        # lfo.upload_fos(ripped_fo_data)
+        # lfo.upload_foleaders(ripped_fo_leads)
     print('Done!, ["Hip", "Hip"]!')

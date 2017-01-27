@@ -3,55 +3,112 @@ from bs4 import BeautifulSoup
 from shutil import copyfileobj
 from os import path
 from time import sleep
-import requests
-# from FO import *
+from urllib.request import urlopen
+from json import loads
+from FO import *
 from SqlTlkt import *
 from selenium import webdriver
-
+import requests
+import re
 # import os.path
 # import shutil
 
 
 class LoadFO:
-    def __init__(self, db, u, p):
+    def __init__(self, db, u, p, k):
         self.Success = False
         self.sql = SqlTlkt(db, u, p)
+        self.google_api_key = k
 
-    def download_fos(self, url):
+    def get_soup(self, url):
         try:
             # driver = webdriver.Firefox()
             driver = webdriver.PhantomJS('C:/Program Files/phantomjs-2.1.1-windows/bin/phantomjs.exe')
             driver.get(url)
             html = driver.page_source
-            soup = BeautifulSoup(html)
+            soup = BeautifulSoup(html, "lxml")
+            driver.close()
         except:
             print("Error loading FOs file:", exc_info()[0])
             raise
         return soup
 
+    def rip_address(self, soup):
+        # Gets the third Column
+        third_col_raw = soup.find('div', class_='mosaic-position-two-thirds')
+        # Grabs the content
+        content_raw = third_col_raw.find_all('div', {'class': 'mosaic-tile-content'})
+        # Grab the address (All seem to be either in the first or second div)
+        if content_raw[0].find('p'):
+            addr_one = content_raw[0].find('p').find_all('br')[0].previous_sibling
+            addr_two = content_raw[0].find('p').find_all('br')[0].next_sibling
+            addr_three = content_raw[0].find('p').find_all('br')[1].next_sibling
+        elif content_raw[1].find('p'):
+            addr_one = content_raw[1].find('p').find_all('br')[0].previous_sibling
+            addr_two = content_raw[1].find('p').find_all('br')[0].next_sibling
+            addr_three = content_raw[1].find('p').find_all('br')[1].next_sibling
+
+        # Check if third p tag is an address or phone number
+        if addr_three:
+            if self.is_phone_number(addr_three):
+                ph = addr_three
+                addr_three = ''
+            else:
+                addr_three = ', ' + addr_three
+        else:
+            addr_three = ''
+        addr_out = '%s, %s%s' % (addr_one, addr_two, addr_three)
+
+        # Lookup Address Lat/Long
+        a_out = self.geocode_hq(addr_out)
+        if a_out:
+            return a_out
+        else:
+            return [None, None]
+
     def rip_fos(self, soup):
+        fo_all = []
+        fo_l_all = []
         try:
             lis = soup.find_all('li', {'class': 'portal-type-folder castle-grid-block-item'})
             for li in lis:
+                # Lookup Name
                 h3_title = li.find('h3', {'class': 'title'})
-                # Name
                 fo_name = h3_title.find('a').get_text()
-                # External URL
-                fo_url_external = h3_title.find('a')['href']
+
+                # Lookup FOID
+                fo_id = self.get_foid_by_foname(fo_name)
+
                 # Icon
                 iconurl = li.find('div', {'class': 'focuspoint'})['data-base-url']
-                iconfilepath = "../images/FOImages/" + fo_name.replace(" ", "") + '.jpg'
-
+                iconfilepath = "../images/FOImages/" + str(fo_id) + '.jpg'
                 self.rip_fo_image(iconurl, iconfilepath)
 
-                desc_raw = soup.find('div', {'class': 'description'})
-                fo_address = str(desc_raw.find_all('p')[0]).split('<br/>')[0].replace("<p>", "") + ', ' + \
-                             str(desc_raw.find_all('p')[0]).split('<br/>')[1]
-                # Address
+                # Lookup External URL
+                fo_url_external = h3_title.find('a')['href']
+
+                # Lookup Internal URL
+                fo_url_internal = None
+
+                # Get soup from external URL (FO's Homepage)
+                soup = self.get_soup(fo_url_external)
+
+                # Lookup Address
+                # FIXMEWAB: Needs to accept returned Lat/Long
+                [fo_lat, fo_long] = self.rip_address(soup)
+
+                fo = FieldOffice(fo_id, fo_name, iconfilepath, fo_url_external, fo_url_internal, fo_lat, fo_long)
+                fo_all.append(fo)
+
+                fo_l_all.append(self.rip_fo_leaders(fo_id, soup))
+                p_added = '%s: %s, %s %s' % (fo_id, fo_name, fo_lat, fo_long)
+                print(p_added)
 
         except:
             print("Error ripping FOs file:", exc_info()[0])
             raise
+
+        return [fo_all, fo_l_all]
 
     def rip_fo_image(self, i_url, i):
         try:
@@ -62,91 +119,109 @@ class LoadFO:
                 with open(i, 'wb') as out_file:
                     copyfileobj(response.raw, out_file)
                 del response
-            print(i_url)
+                print(i_url)
         except:
             print("Error ripping FOs file:", exc_info()[0])
             raise
 
+    def is_phone_number(self, s):
+        phone_regex = re.compile(r'''(
+            (\d{3}|\(\d{3}\))?            # area code
+            (\s|-|\.)?                    # separator
+            \d{3}                         # first 3 digits
+            (\s|-|\.)                     # separator
+            \d{4}                         # last 4 digits
+            (\s*(ext|x|ext.)\s*\d{2,5})?  # extension
+            )''', re.VERBOSE)
+        match = phone_regex.search(s)
+        if match:
+            return True
+        else:
+            return False
+
+    def geocode_hq(self, a):
+        address = a.replace(" ", "+")
+        url = "https://maps.googleapis.com/maps/api/geocode/json?address=%s&key=%s" % (address, self.google_api_key)
+        response = urlopen(url)
+        jsongeocoded = loads(response.read().decode('utf-8'))
+        # Return Lat & Long
+        if jsongeocoded['results']:
+            return [jsongeocoded['results'][0]['geometry']['location']['lat'],
+                    jsongeocoded['results'][0]['geometry']['location']['lng']]
+        else:
+            return None
+
+    def get_foid_by_foname(self, fn):
+        strSQL = "SELECT [id] FROM [Published_FO] WHERE [FOName] = ?"
+        params = []
+        params = [fn]
+        FOID = self.sql.get_sql_list(strSQL, params)
+        if FOID[0][0]:
+            return FOID[0][0]
+        else:
+            return None
+
+    def get_focode_by_foid(self, id):
+        strSQL = "SELECT [FOCode] FROM [Published_FO] WHERE [id] = ?"
+        params = []
+        params = [id]
+        focode = self.sql.get_sql_list(strSQL, params)
+        if focode[0][0]:
+            return focode[0][0]
+        else:
+            return None
+
     def upload_fos(self, fos):
         for fo in fos:
-            strSQL = "INSERT INTO [Published_FO] " \
-                     "( [FOName], [IconFilepath], [FOURL], [FOLat], [FOLong] ) " \
-                     "VALUES " \
-                     "( ?, ?, ?, ?, ? );"
+            strSQL = "UPDATE [Published_FO] " \
+                     "SET [IconFilepath] = ?, " \
+                     "[FOURL] = ?, " \
+                     "[FOLat] = ?, " \
+                     "[FOLong] = ? " \
+                     "WHERE [id] = ?;"
             params = []
-            params = [fo.FOName, fo.IconFilepath, fo.FOURL, fo.FOLat, fo.FOLong]
-            FOID = self.sql.insert_get_id(strSQL, params)
-            fo.ProfileID = FOID
+            params = [fo.IconFilepath, fo.FOURL_Internal, fo.FOLat, fo.FOLong, fo.FOID]
+            self.sql.run_query(strSQL, params)
 
-        strSQL2 = "UPDATE [Published_FO] " \
-                  "SET [FOName] = LEFT([FOName], CHARINDEX(',', [FOName]) - 1) " \
-                  "WHERE CHARINDEX(',', [FOName]) > 0;"
-        self.sql.run_query(strSQL2)
+    def rip_fo_leaders(self, foid, soup):
+        # Gets the third Column
+        third_col_raw = soup.find('div', class_='mosaic-position-two-thirds')
+        # Grabs the content of all the data elements in the column
+        content_raw = third_col_raw.find_all('div', {'class': 'mosaic-tile-content'})
 
-    def rip_foleaders(self, fos):
-        browser = webdriver.Firefox()
-        leadertext = ""
-        for fo in fos:
-            browser.get(fo.FOURL)
-            print('Loading:', fo.FOURL)
-            soup = BeautifulSoup(browser.page_source)
-            leader = soup.find('div', {'class': 'portletContent'}).find_all('table')[3].get_text().strip()
-            try:
-                subsraw = soup.find('div', {'class': 'portletContent'}).find_all('table')[4]
-                substd = subsraw.find_all('td')
-            except:
-                substd = ""
+        # Find the section with the H3
+        for d in content_raw:
+            if d.find('h3'):
+                if d.find('h3').get_text().lower() != 'contact us':
+                    if d.find('h3').get_text().lower() != 'Resident Agencies':
+                        raw_leadership = d
+                        break
+                    else:
+                        if d.find('h5'):
+                            raw_leadership = d
+                            break
 
-            subs = ""
-            for td in substd:
-                subs = subs + td.get_text() + "; "
+        # The first H3 is El Jefe's Title, Second <p> is the name islead = 1
+        #raw_leadership = content_raw[3]
+        if raw_leadership.find('h3'):
+            jefe_title = raw_leadership.find('h3').get_text()
+            if raw_leadership.find_all('p')[0]:
+                jefe_name = raw_leadership.find_all('p')[0].get_text()
+                jefe_name_nw = ''.join(jefe_name.split())
+                if len(jefe_name_nw) > 0:
+                    return [foid, jefe_name, jefe_title, 1]
+            if raw_leadership.find_all('p')[1]:
+                jefe_name = raw_leadership.find_all('p')[1].get_text()
+                jefe_name_nw = ''.join(jefe_name.split())
+                if len(jefe_name_nw) > 0:
+                    return [foid, jefe_name, jefe_title, 1]
+            if raw_leadership.find_all('p')[2]:
+                jefe_name = raw_leadership.find_all('p')[2].get_text()
+                jefe_name_nw = ''.join(jefe_name.split())
+                if len(jefe_name_nw) > 0:
+                    return [foid, jefe_name, jefe_title, 1]
 
-            remap = {
-                ord('\t'): ' ',
-                ord('\f'): ' ',
-                ord('\r'): None,
-                ord('\n'): None
-            }
-
-            leadertext = leadertext + "[" + fo.FOName + "]: "
-            leader = leader.translate(remap)
-            leadertext = leadertext + leader + '\n'
-            subs = subs.translate(remap)
-            leadertext = leadertext + subs + '\n'
-            print(leader)
-            print(subs)
-            sleep(5)
-
-        with open('LeadershipRaw.txt', 'w') as f:
-            f.truncate()
-            f.write(leadertext)
-        f.closed
-        # try:
-        #     leader_title = content.find('td', {'class': ['blackgraphtx', 'greygraphtx']}).find('strong').get_text()
-        #     leader_name = content.find('td', {'class': ['blackgraphtx', 'greygraphtx']}).find('a').get_text()
-        # except:
-        #     try:
-        #         leader_title = content.find('p', {'class': ['blackgraphtx', 'greygraphtx']}).find('strong').get_text()
-        #         leader_name = content.find('p', {'class': ['blackgraphtx', 'greygraphtx']}).find('a').get_text()
-        #     except:
-        #         try:
-        #             leader_title = content.find('td', {'class': ['blackgraphtx', 'greygraphtx']}).find('b').get_text()
-        #             leader_name = content.find('td', {'class': ['blackgraphtx', 'greygraphtx']}).find('a').get_text()
-        #         except:
-        #             try:
-        #                 leader_title = content.find('td', {'class': ['blackgraphtx', 'greygraphtx']}).find('b').get_text()
-        #                 leader_name = content.find('td', {'class': ['blackgraphtx', 'greygraphtx']}).find('span').get_text()
-        #             except:
-        #                 try:
-        #                     leader_title = content.find('span', {'class': ['blackgraphtx', 'greygraphtx']}).find('strong').get_text()
-        #                     leader_name = content.find('span', {'class': ['blackgraphtx', 'greygraphtx']}).find('a').get_text()
-        #                 except:
-        #                     try:
-        #                         leader_title = content.find_all('span', {'class': ['blackgraphtx', 'greygraphtx']})[0].get_text()
-        #                         leader_name = content.find_all('span', {'class': ['blackgraphtx', 'greygraphtx']})[1].get_text()
-        #                     except:
-        #                         leader_title = "None"
-        #                         leader_name = "None"
+        return None
 
     def upload_foleaders(self, fos):
         with open('LeadershipRaw.txt', 'r') as f:
