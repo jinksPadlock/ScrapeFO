@@ -198,33 +198,39 @@ class LoadFO:
 
         # Find the section with the H3
         for d in content_raw:
-            if d.find('h3'):
-                if d.find('h3').get_text().lower() != 'contact us':
-                    if d.find('h3').get_text().lower() != 'Resident Agencies':
-                        raw_leadership = d
-                        break
-                    else:
-                        if d.find('h5'):
-                            raw_leadership = d
-                            break
+            if d.find('h3') and d.find('h3').get_text().lower() != 'contact us' \
+                    and d.find('h3').get_text().lower() != 'resident agencies':
+                raw_leadership = d
+                break
+            else:
+                if d.find('h5'):
+                    raw_leadership = d
+                    break
 
-        # The first H3 is El Jefe's Title, Second <p> is the name islead = 1
+        # Title is the first <h3> the name is in the first-third <p>. FIXMEWAB: Slightly brittle.
         if raw_leadership.find('h3'):
             jefe_title = raw_leadership.find('h3').get_text()
+        elif raw_leadership.find('h5'):
+            jefe_title = raw_leadership.find('h5').get_text()
+
+        if raw_leadership.find('h3') or raw_leadership.find('h5'):
             if raw_leadership.find_all('p')[0]:
                 jefe_name = raw_leadership.find_all('p')[0].get_text()
                 jefe_name_nw = ''.join(jefe_name.split())
                 if len(jefe_name_nw) > 0:
+                    print(foid, jefe_name, jefe_title)
                     return [foid, jefe_name, jefe_title, 1]
             if raw_leadership.find_all('p')[1]:
                 jefe_name = raw_leadership.find_all('p')[1].get_text()
                 jefe_name_nw = ''.join(jefe_name.split())
                 if len(jefe_name_nw) > 0:
+                    print(foid, jefe_name, jefe_title)
                     return [foid, jefe_name, jefe_title, 1]
             if raw_leadership.find_all('p')[2]:
                 jefe_name = raw_leadership.find_all('p')[2].get_text()
                 jefe_name_nw = ''.join(jefe_name.split())
                 if len(jefe_name_nw) > 0:
+                    print(foid, jefe_name, jefe_title)
                     return [foid, jefe_name, jefe_title, 1]
 
         return None
