@@ -10,8 +10,6 @@ from SqlTlkt import *
 from selenium import webdriver
 import requests
 import re
-# import os.path
-# import shutil
 
 
 class LoadFO:
@@ -94,7 +92,6 @@ class LoadFO:
                 soup = self.get_soup(fo_url_external)
 
                 # Lookup Address
-                # FIXMEWAB: Needs to accept returned Lat/Long
                 [fo_lat, fo_long] = self.rip_address(soup)
 
                 fo = FieldOffice(fo_id, fo_name, iconfilepath, fo_url_external, fo_url_internal, fo_lat, fo_long)
@@ -183,6 +180,16 @@ class LoadFO:
             params = [fo.IconFilepath, fo.FOURL_Internal, fo.FOLat, fo.FOLong, fo.FOID]
             self.sql.run_query(strSQL, params)
 
+    def upload_fo_leaders(self, fo_ls):
+        for fo_l in fo_ls:
+            strSQL = "INSERT INTO [Published_FOLeadership] " \
+                     "( [FOProfileID], [FullName], [Title], [isLead] ) " \
+                     "VALUES " \
+                     "( ?, ?, ?, ? );"
+            params = []
+            params = [fo_l.foid, fo_l.FullName, fo_l.Title, fo_l.isLead]
+            self.sql.RunQuery(strSQL, params)
+
     def rip_fo_leaders(self, foid, soup):
         # Gets the third Column
         third_col_raw = soup.find('div', class_='mosaic-position-two-thirds')
@@ -202,7 +209,6 @@ class LoadFO:
                             break
 
         # The first H3 is El Jefe's Title, Second <p> is the name islead = 1
-        #raw_leadership = content_raw[3]
         if raw_leadership.find('h3'):
             jefe_title = raw_leadership.find('h3').get_text()
             if raw_leadership.find_all('p')[0]:
@@ -222,57 +228,3 @@ class LoadFO:
                     return [foid, jefe_name, jefe_title, 1]
 
         return None
-
-    def upload_foleaders(self, fos):
-        with open('LeadershipRaw.txt', 'r') as f:
-            sql = SqlTlkt()
-            for line in f:
-                # if header then get foname and query foid and get leader and leadername
-                fn = ""
-                ltitle = ""
-                lname = ""
-                if len(line) > 0:
-                    if line.find('[') >= 0:
-                        if len((line.split('['))[1].split(']')[0]) > 0:
-                            fn = (line.split('['))[1].split(']')[0]
-                            if line.find('Special Agent in Charge') > 0:
-                                ltitle = 'Special Agent in Charge'
-                                lname = line[line.find('Special Agent in Charge')+len('Special Agent in Charge'):].strip()
-                            elif line.find('Assistant Director in Charge'):
-                                ltitle = 'Assistant Director in Charge'
-                                lname = line[line.find('Assistant Director in Charge')+len('Assistant Director in Charge'):].strip()
-                            else:
-                                ltitle = "<?>"
-                                lname = '<?>'
-                        print(fn + "-->", ltitle+":", lname)
-                        # Get the FOID
-                        strSQL = "SELECT [id] FROM [Published_FO] WHERE [FOName] = ?"
-                        params = []
-                        params = [fn]
-                        foid = sql.get_sql_list(strSQL, params)[0][0]
-                        # Insert the Leader
-                        strSQL2 = "INSERT INTO [Published_FOLeadership] " \
-                                  "( [FOProfileID], [FullName], [Title], [isLead] ) " \
-                                  "VALUES " \
-                                  "( ?, ?, ?, ? );"
-                        params2 = []
-                        params2 = [foid, lname, ltitle, 1]
-                        sql.run_query(strSQL2, params2)
-                    else:
-                        # Try to parse titles and names... ugh
-                        chunks = line.strip().split(';')
-                        if len(chunks[0]) > 0:
-                            ltitle = chunks[0].strip()
-                            dudes = chunks[1].strip().split('-')
-                            for dude in dudes:
-                                if len(dude) > 0:
-                                    lname = dude.strip()
-                                    print(ltitle+":", lname)
-                                    strSQL = "INSERT INTO [Published_FOLeadership] " \
-                                             "( [FOProfileID], [FullName], [Title], [isLead] ) " \
-                                             "VALUES " \
-                                             "( ?, ?, ?, ? );"
-                                    params = []
-                                    params = [foid, lname, ltitle, 0]
-                                    sql.run_query(strSQL, params)
-        f.closed
