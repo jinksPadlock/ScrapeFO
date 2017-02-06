@@ -13,9 +13,9 @@ import re
 
 
 class LoadFO:
-    def __init__(self, db, u, p, k):
+    def __init__(self, db_a, db, p, u, pw, k):
         self.Success = False
-        self.sql = SqlTlkt(db, u, p)
+        self.sql = SqlTlkt(db_a, db, p, u, pw)
         self.google_api_key = k
 
     def get_soup(self, url):

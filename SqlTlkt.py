@@ -4,12 +4,14 @@ import uuid
 
 class SqlTlkt:
 
-    def __init__(self, db, u, p):
+    def __init__(self, s, db, p, u, pw):
         # Connection example: Windows, without a DSN, using the Windows SQL Server driver
-        cxnStr = 'DRIVER={SQL Server Native Client 11.0};SERVER=10.0.0.31;PORT=1433;' +\
-                 'DATABASE=' + db +\
+        cxnStr = 'DRIVER={SQL Server Native Client 11.0}' +\
+                 ';SERVER=' + s +\
+                 ';PORT=' + p +\
+                 ';DATABASE=' + db +\
                  ';UID=' + u +\
-                 ';PWD=' + p + ';'
+                 ';PWD=' + pw + ';'
         self.cnxn = pyodbc.connect(cxnStr)
 
     def set_conn(self, c):
